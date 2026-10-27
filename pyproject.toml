@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hepsim-ecf2-practice"
+version = "0.1.0"
+description = "Independent normalized two-point jet energy correlator practice module"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[tool.setuptools]
+py-modules = ["jet_observables"]
