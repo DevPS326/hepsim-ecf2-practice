@@ -14,5 +14,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
+# Test-only reference implementations, never needed to use ecf2. The README
+# lists the full environments in which the reference tests were run.
+[project.optional-dependencies]
+fastjet = ["fastjet==3.5.2.0"]
+energyflow = ["energyflow==1.4.0"]
+
 [tool.setuptools]
 py-modules = ["jet_observables"]

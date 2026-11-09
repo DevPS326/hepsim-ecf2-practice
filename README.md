@@ -36,10 +36,14 @@ python -m examples.demo_ecf2
 python -m unittest discover -s tests -v
 ```
 
-The EnergyFlow reference tests in `tests/test_energyflow_reference.py` are
-optional: they are skipped, with an explicit message, unless EnergyFlow is
-importable. See [Benchmark against EnergyFlow](#benchmark-against-energyflow)
-for the separate (NumPy < 2) environment they need.
+NumPy is the only runtime dependency. The reference tests in
+`tests/test_energyflow_reference.py` and `tests/test_fastjet_reference.py` are
+optional: each is skipped, with an explicit message, unless EnergyFlow or
+FastJet is importable. The extras `.[fastjet]` and `.[energyflow]` install the
+pinned reference versions; see
+[Benchmark against EnergyFlow](#benchmark-against-energyflow) (it needs a
+separate NumPy < 2 environment) and
+[Benchmark against FastJet](#benchmark-against-fastjet).
 
 Or use the API directly:
 
@@ -71,11 +75,11 @@ positive pT yield `0.0`. The implementation scales as O(N²) in memory/time.
 - An earlier separate Colab exercise applied ECF2 to 100 Pythia8 quark/gluon
   dataset jets. That dataset is **not included** and the standalone tests
   **do not** claim to rerun the original data analysis.
-- An independent numerical comparison with **installed** EnergyFlow 1.4.0 on
-  synthetic jets is documented in
-  [Benchmark against EnergyFlow](#benchmark-against-energyflow). A comparison
-  with FastJet has **not** been run, and this module has not undergone
-  detector or cross-generator physics validation.
+- Independent numerical comparisons with **installed** EnergyFlow 1.4.0 and
+  FastJet 3.5.2.0 (fjcontrib EnergyCorrelator) on synthetic jets are
+  documented in [Benchmark against EnergyFlow](#benchmark-against-energyflow)
+  and [Benchmark against FastJet](#benchmark-against-fastjet). This module has
+  not undergone detector or cross-generator physics validation.
 - This is a single-observable practice package, not a mature multi-observable
   ML4SCI library, and no project acceptance is implied.
 
@@ -153,10 +157,93 @@ message names the missing module); all other tests are unaffected.
 
 **Scope.** This checks numerical agreement of one observable with one
 independent implementation on synthetic jets. It is not a comparison with
-FastJet, real events, or detector effects.
+real events or detector effects.
+
+## Benchmark against FastJet
+
+`tests/test_fastjet_reference.py` compares `ecf2()` with the fjcontrib
+`EnergyCorrelator` shipped in the scikit-hep `fastjet` package, on 24
+deterministic synthetic jets (2 to 55 constituents plus 5 zero-pT padding rows,
+seed `20261108`; every other jet straddles phi = ±pi) at `beta = 0.5, 1.0, 2.0`
+and two mass hypotheses: 144 comparisons each against `C1` and against
+`ECF(2)/ECF(1)^2`.
+
+**Reference quantity.** With the default `pt_R` measure, `EnergyCorrelator`
+uses `E_i = pT_i` and `theta_ij^2 = Delta y_ij^2 + Delta phi_ij^2`, so
+
+$$
+C_1^{(\beta)} = \frac{\mathrm{ECF}(2,\beta)}{\mathrm{ECF}(1,\beta)^2}
+= \frac{\sum_{i<j} p_{T,i}\, p_{T,j}\, \theta_{ij}^{\beta}}{\left(\sum_k p_{T,k}\right)^2}
+= e_2^{(\beta)},
+$$
+
+with unordered pairs, as in `ecf2()`. No factor of two is needed here, unlike
+EnergyFlow's ordered sum.
+
+**Conventions the comparison depends on.**
+
+- *Scalar pT sum.* `z_i = pT_i / sum_k pT_k` uses the scalar sum of
+  constituent pT. The test checks that `ECF(1)` equals that scalar sum and is
+  strictly larger than the clustered jet's vector pT.
+- *Rapidity, not pseudorapidity.* Rows `[pT, y, phi]` become four-vectors with
+  `mT = sqrt(pT^2 + m^2)`, `pz = mT sinh(y)` and `E = mT cosh(y)`, so FastJet
+  recovers the rapidity `ecf2()` was given. A negative control builds
+  `pz = pT sinh(column 1)` instead (column 1 read as pseudorapidity). For soft
+  massive constituents FastJet then sees different rapidities and the
+  comparison fails, as it must. For massless constituents the two coincide
+  and it passes.
+- *Mass hypotheses.* Because rapidity is built in, the result does not depend
+  on the mass. The test runs both massless and charged-pion
+  (`m = 0.13957039 GeV`) constituents. The PDG ID column is not used.
+- *One jet holding every constituent.* The Python wrapper evaluates
+  correlators on exclusive jets. Cambridge/Aachen with `R = 1000` and
+  `exclusive_jets(1)` merges everything into one jet: `d_ij = Delta R_ij^2 / R^2`
+  is below `d_iB = 1` for every pair, so no constituent is merged with the
+  beam. The test asserts that each jet keeps all of its constituents.
+- *Why not small-R anti-kT.* With anti-kT `R = 0.4`, `exclusive_jets(1)`
+  drops constituents that were merged with the beam. FastJet also warns that
+  exclusive jets are only meaningful for kt-like algorithms. A negative
+  control asserts that this set-up loses constituents and disagrees with
+  `ecf2()`.
+- Zero-pT padding rows are removed before clustering; `ecf2()` ignores them.
+
+**Results** (maximum relative error over 24 jets; run on 2026-11-09 on this
+machine):
+
+| mass / GeV | beta | vs `C1` | vs `ECF(2)/ECF(1)^2` |
+|-----------:|-----:|--------:|---------------------:|
+| 0          | 0.5  | 2.000e-15 | 2.000e-15 |
+| 0          | 1.0  | 1.568e-15 | 1.568e-15 |
+| 0          | 2.0  | 2.485e-15 | 2.485e-15 |
+| 0.13957    | 0.5  | 2.173e-15 | 2.018e-15 |
+| 0.13957    | 1.0  | 2.293e-15 | 2.293e-15 |
+| 0.13957    | 2.0  | 3.465e-15 | 3.249e-15 |
+
+The test tolerance is a relative error of `1e-12`, and the test prints this
+table when it runs. The same numbers were obtained in two environments, both
+on Python 3.11.9 (Windows 11, 64-bit):
+
+| Environment | Packages | Result |
+| --- | --- | --- |
+| FastJet only | fastjet 3.5.2.0 (FastJet 3.5.2), awkward 2.14.0, vector 1.9.0, NumPy 2.4.4 | 35 tests OK, 5 EnergyFlow tests skipped |
+| FastJet + EnergyFlow | the above with NumPy 1.26.4, plus EnergyFlow 1.4.0, h5py 3.16.0, wasserstein 1.1.0 | 35 tests OK, none skipped |
+
+```bash
+python -m venv ../fastjet-venv
+../fastjet-venv/Scripts/python -m pip install ".[fastjet]"          # POSIX: bin/python
+../fastjet-venv/Scripts/python -m unittest discover -s tests -v    # from this folder
+```
+
+Without FastJet, the six FastJet-dependent tests are skipped (the skip message
+names the missing module). The two tests of the synthetic jet set always run.
+
+**Scope.** Synthetic jets only, as for EnergyFlow: this pins conventions and
+numerical agreement, not physics performance on real events.
 
 ## References
 
 - [ML4SCI HEPSIM2 2026 project idea](https://ml4sci.org/gsoc/2026/proposal_HEPSIM2.html)
 - [EnergyFlow hadronic measure definitions](https://energyflow.network/docs/measures/)
+- [FastJet contrib (EnergyCorrelator)](https://fastjet.hepforge.org/contrib/) and the
+  [scikit-hep `fastjet` Python package](https://github.com/scikit-hep/fastjet)
 - [FastJet-related talk showing normalized e2](https://soyez.fastjet.fr/data/talks/2016-04-ULg.pdf)
